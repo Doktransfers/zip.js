@@ -1,4 +1,6 @@
 export default ([
+    { title: "Estimate size (multiple entries)", script: "./test-estimate-size-multiple.js", env: ["deno", "node", "browser", "bun"] },
+    { title: "Estimate size (Zip64)", script: "./test-estimate-size-zip64.js", env: ["deno", "node", "browser", "bun"] },
 	{ title: "Abort signal (read)", script: "./test-abort-signal-read.js" },
 	{ title: "Abort signal (write)", script: "./test-abort-signal-write.js" },
 	{ title: "Append to zip", script: "./test-append-to-zip.js" },
