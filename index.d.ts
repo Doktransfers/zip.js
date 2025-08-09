@@ -1267,7 +1267,7 @@ export interface EntryGetDataCheckPasswordOptions extends EntryGetDataOptions {}
  * zipper.close()
  * ```
  */
-export class ZipWriterStream {
+export class ZipWriterStream<T> {
   /**
    * Creates the stream.
    *
@@ -1278,12 +1278,17 @@ export class ZipWriterStream {
   /**
    * The readable stream.
    */
-  readable: ReadableStream<Uint8Array>;
+  readable: ReadableStream<T>;
 
   /**
    * The ZipWriter property.
    */
-  zipWriter: ZipWriter<unknown>;
+  zipWriter: ZipWriter<T>;
+
+  /**
+   * Promises resolving to the metadata of the entries added to the zip file.
+   */
+  entriesPromise: Promise<EntryMetaData>[];
 
   /**
    * Returns an object containing a readable and writable property for the .pipeThrough method
@@ -1291,7 +1296,7 @@ export class ZipWriterStream {
    * @param path The name of the stream when unzipped.
    * @returns An object containing readable and writable properties
    */
-  transform<T>(path: string): {
+  transform(path: string, options?: ZipWriterAddDataOptions): {
     readable: ReadableStream<T>;
     writable: WritableStream<T>;
   };
@@ -1302,7 +1307,7 @@ export class ZipWriterStream {
    * @param path The directory path of where the stream should exist in the zipped stream.
    * @returns A WritableStream.
    */
-  writable<T>(path: string): WritableStream<T>;
+  writable(path: string, options?: ZipWriterAddDataOptions): WritableStream<T>;
 
   /**
    * Writes the entries directory, writes the global comment, and returns the content of the zipped file.
@@ -1314,7 +1319,7 @@ export class ZipWriterStream {
   close(
     comment?: Uint8Array,
     options?: ZipWriterCloseOptions
-  ): Promise<unknown>;
+  ): Promise<T>;
 }
 
 /**
