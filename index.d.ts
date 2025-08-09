@@ -1377,6 +1377,26 @@ export class ZipWriter<Type> {
       | ReadableStream[]
   ): Promise<void>;
 
+	/**
+	 * Estimate the final size of the ZIP stream for a single entry, without consuming its data.
+	 * Conditions/limitations:
+	 * - Only supported for archives using zero compression level (stored, no compression).
+	 * - The ZIP must be empty (no entries added yet) so the result represents the whole archive size.
+	 * - The uncompressed size must be provided.
+	 * - If ZIP64 is required by sizes/offsets, the estimate will include ZIP64 records.
+	 *
+	 * @param {string} name File entry name
+	 * @param {number} uncompressedSize Known uncompressed byte size of the entry
+	 * @param {object} options Entry options (subset of add options). Level will be forced to 0.
+	 * @param {Uint8Array} comment Optional archive comment (affects EOCD size)
+	 * @returns {number} Estimated total number of bytes of the resulting ZIP stream
+	 */
+	estimateStreamSize(name: string, 
+    uncompressedSize: number, 
+    options: ZipWriterAddDataOptions, 
+    comment: Uint8Array
+  ): Promise<number>;
+
   /**
    * Adds an entry into the zip file
    *
