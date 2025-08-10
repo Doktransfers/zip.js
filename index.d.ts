@@ -1378,24 +1378,14 @@ export class ZipWriter<Type> {
   ): Promise<void>;
 
 	/**
-	 * Estimate the final size of the ZIP stream for a single entry, without consuming its data.
-	 * Conditions/limitations:
-	 * - Only supported for archives using zero compression level (stored, no compression).
-	 * - The ZIP must be empty (no entries added yet) so the result represents the whole archive size.
-	 * - The uncompressed size must be provided.
-	 * - If ZIP64 is required by sizes/offsets, the estimate will include ZIP64 records.
+	 * Estimate the final size of the ZIP stream for all entries currently added to this writer.
+	 * Iterates through entries, adds central directory and EOCD sizes, without writing anything.
+	 * The optional `options.comment` behaves like in `close` and is used to estimate the global comment length.
 	 *
-	 * @param {string} name File entry name
-	 * @param {number} uncompressedSize Known uncompressed byte size of the entry
-	 * @param {object} options Entry options (subset of add options). Level will be forced to 0.
-	 * @param {Uint8Array} comment Optional archive comment (affects EOCD size)
-	 * @returns {number} Estimated total number of bytes of the resulting ZIP stream
+	 * @param options Options affecting the estimation (e.g., `zip64`, `supportZip64SplitFile`, `comment`).
+	 * @returns Estimated total number of bytes of the resulting ZIP stream.
 	 */
-	estimateStreamSize(name: string, 
-    uncompressedSize: number, 
-    options: ZipWriterAddDataOptions, 
-    comment: Uint8Array
-  ): Promise<number>;
+	estimateStreamSize(options?: ZipWriterCloseOptions & ZipWriterConstructorOptions & { comment?: string | Uint8Array }): number;
 
   /**
    * Adds an entry into the zip file

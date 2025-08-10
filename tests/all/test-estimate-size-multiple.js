@@ -10,28 +10,18 @@ async function test() {
   const blobWriter = new zip.BlobWriter("application/zip");
   const zipWriter = new zip.ZipWriter(blobWriter, { keepOrder: true });
 
-  // Estimate sizes before adding any entries (empty archive requirement)
-  const estDir = zipWriter.estimateStreamSize("folder/", 0, { directory: true, level: 0 });
-  if (!(typeof estDir === "number" && estDir > 0)) throw new Error("estimate for directory should be > 0");
-  
-  const estA = zipWriter.estimateStreamSize("folder/a.txt", 1, { level: 0 });
-  if (estA < 1) throw new Error("estimate should be >= uncompressed size");
-  
+  // Add entries, then estimate whole-archive size with a comment
   const bytes = new Uint8Array(1024 * 64); // 64 KiB
-  const estB = zipWriter.estimateStreamSize("b.bin", bytes.length, { level: 0 });
-  if (estB < bytes.length) throw new Error("estimate should be >= uncompressed size");
 
-  // Now add the entries
   await zipWriter.add("folder/", undefined, { directory: true });
+  await zipWriter.add("folder/a.txt", new zip.BlobReader(new Blob(["A"])) , { level: 0 });
+  await zipWriter.add("b.bin", new zip.BlobReader(new Blob([bytes])), { level: 0 });
 
-  const contentA = new Blob(["A"], { type: "text/plain" });
-  await zipWriter.add("folder/a.txt", new zip.BlobReader(contentA), { level: 0 });
+  const est = zipWriter.estimateStreamSize({ comment: "multi" });
+  if (!(typeof est === "number" && est > 0)) throw new Error("estimate should be > 0");
 
-  const contentB = new Blob([bytes], { type: "application/octet-stream" });
-  await zipWriter.add("b.bin", new zip.BlobReader(contentB), { level: 0 });
-
-  // Finalize archive
-  await zipWriter.close();
+  // Finalize archive with same comment
+  await zipWriter.close(new TextEncoder().encode("multi"));
   const archive = await blobWriter.getData();
 
   // Validate archive integrity by reading it back

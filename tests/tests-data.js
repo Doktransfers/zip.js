@@ -1,4 +1,5 @@
 export default ([
+    { title: "Estimate size (accurate single entry)", script: "./test-estimate-size-accurate.js", env: ["deno", "node", "browser", "bun"] },
     { title: "Estimate size (multiple entries)", script: "./test-estimate-size-multiple.js", env: ["deno", "node", "browser", "bun"] },
     { title: "Estimate size (Zip64)", script: "./test-estimate-size-zip64.js", env: ["deno", "node", "browser", "bun"] },
 	{ title: "Abort signal (read)", script: "./test-abort-signal-read.js" },
