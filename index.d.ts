@@ -1291,7 +1291,7 @@ export class ZipWriterStream {
    * @param path The name of the stream when unzipped.
    * @returns An object containing readable and writable properties
    */
-  transform<T>(path: string): {
+  transform<T>(path: string, options?: ZipWriterAddDataOptions): {
     readable: ReadableStream<T>;
     writable: WritableStream<T>;
   };
@@ -1302,7 +1302,7 @@ export class ZipWriterStream {
    * @param path The directory path of where the stream should exist in the zipped stream.
    * @returns A WritableStream.
    */
-  writable<T>(path: string): WritableStream<T>;
+  writable<T>(path: string, options?: ZipWriterAddDataOptions): WritableStream<T>;
 
   /**
    * Writes the entries directory, writes the global comment, and returns the content of the zipped file.
@@ -1382,10 +1382,11 @@ export class ZipWriter<Type> {
 	 * Iterates through entries, adds central directory and EOCD sizes, without writing anything.
 	 * The optional `options.comment` behaves like in `close` and is used to estimate the global comment length.
 	 *
-	 * @param options Options affecting the estimation (e.g., `zip64`, `supportZip64SplitFile`, `comment`).
+    * @param options Options affecting the estimation (e.g., `zip64`, `supportZip64SplitFile`, `comment`).
+    * You can also pass a list of files to estimate next via `options.files`.
 	 * @returns Estimated total number of bytes of the resulting ZIP stream.
 	 */
-	estimateStreamSize(options?: ZipWriterCloseOptions & ZipWriterConstructorOptions & { comment?: string | Uint8Array }): number;
+  estimateStreamSize(options?: ZipWriterCloseOptions & ZipWriterConstructorOptions & { comment?: string | Uint8Array; files?: ZipWriterEstimateFile[]; scope?: "stream" | "entry" }): number;
 
   /**
    * Adds an entry into the zip file
@@ -1424,6 +1425,35 @@ export class ZipWriter<Type> {
    * @returns The content of the zip file.
    */
   close(comment?: Uint8Array, options?: ZipWriterCloseOptions): Promise<Type>;
+}
+
+/**
+ * Represents a file descriptor used to estimate pending entries in {@link ZipWriter#estimateStreamSize}.
+ */
+export interface ZipWriterEstimateFile {
+  /** The filename of the entry. */
+  name: string;
+  /** The uncompressed size in bytes (required when passThrough/store is used). */
+  uncompressedSize?: number;
+  /** `true` if the entry is a directory. */
+  directory?: boolean;
+  /** The entry comment. */
+  comment?: string;
+  /** `true` to assume unknown size (forces Zip64). */
+  unknownSize?: boolean;
+  /** `true` to force Zip64 for this entry. */
+  zip64?: boolean;
+  /** `true` to use the extended timestamp extra. */
+  extendedTimestamp?: boolean;
+  /** `true` if the entry is encrypted with ZipCrypto. */
+  zipCrypto?: boolean;
+  /** AES encryption strength (1, 2 or 3). */
+  encryptionStrength?: 1 | 2 | 3;
+  /** Password or raw password for encryption (length used to infer encrypted flag). */
+  password?: string;
+  rawPassword?: Uint8Array;
+  /** Extra field to include. */
+  extraField?: Uint8Array;
 }
 
 /**

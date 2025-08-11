@@ -1,0 +1,42 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>ZIP giant estimate manual test</title>
+<style>body{font-family:sans-serif;margin:2rem} pre{white-space:pre-wrap}</style>
+<h1>ZIP >4 GiB estimate test</h1>
+<p>
+  <input type="file" id="file" />
+  <button id="run">Test selected file</button>
+</p>
+<pre id="out"></pre>
+<script type="module">
+import * as zip from "../../index.js";
+
+class CountingWriter extends zip.Writer {
+  init() { super.init(); }
+  writeUint8Array() {}
+  async getData() { return this.size; }
+}
+
+const out = document.getElementById("out");
+document.getElementById("run").onclick = async () => {
+  out.textContent = "";
+  const file = document.getElementById("file").files[0];
+  if (!file) { out.textContent = "Pick a file first"; return; }
+  if (file.size <= 0xFFFFFFFF) { out.textContent = "File must be > 4 GiB"; return; }
+
+  zip.configure({ useWebWorkers: false });
+  const writer = new CountingWriter();
+  const zipWriter = new zip.ZipWriter(writer, { keepOrder: true, level: 0 });
+
+  const estimate = zipWriter.estimateStreamSize({
+    files: [{ name: file.name, uncompressedSize: file.size, level: 0 }]
+  });
+  if (!(typeof estimate === "number" && estimate > 0)) { out.textContent = "Invalid estimate"; return; }
+
+  await zipWriter.add(file.name, new zip.BlobReader(file), { level: 0, passThrough: true, uncompressedSize: file.size });
+  const actual = await zipWriter.close();
+  out.textContent = `estimate=${estimate} actual=${actual} ${estimate===actual?"OK":"MISMATCH"}`;
+};
+</script>
+
+
