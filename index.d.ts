@@ -1144,6 +1144,10 @@ export interface EntryMetaData {
   /**
    * The number of the disk where the entry data starts.
    */
+  bitFlag?: number;
+  /**
+   * The number of the disk where the entry data starts.
+   */
   /**
    * The internal file attribute (raw).
    * @deprecated Use {@link EntryMetaData#internalFileAttributes} instead.
@@ -1162,7 +1166,17 @@ export interface EntryMetaData {
    * The compression method.
    */
   compressionMethod: number;
+  /**
+   * Raw extra fields and local header details (advanced)
+   */
+  headerArray?: Uint8Array;
+  rawExtraFieldZip64?: Uint8Array;
+  localExtraFieldZip64Length?: number;
+  rawExtraFieldAES?: Uint8Array;
+  rawExtraFieldNTFS?: Uint8Array;
+  rawExtraFieldExtendedTimestamp?: Uint8Array;
 }
+
 export interface DirectoryEntry extends Omit<EntryMetaData, "directory"> {
   directory: true;
   getData?: undefined;

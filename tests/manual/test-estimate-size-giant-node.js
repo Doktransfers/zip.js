@@ -1,3 +1,13 @@
+ 
+async function readFirstLocalHeaderLength(blob) {
+    // Read first 30 bytes (local file header base)
+    const base = new DataView(await blob.slice(0, 30).arrayBuffer());
+    const sig = base.getUint32(0, true);
+    if (sig !== 0x04034b50) throw new Error("invalid local header signature");
+    const nameLen = base.getUint16(26, true);
+    const extraLen = base.getUint16(28, true);
+    return 30 + nameLen + extraLen;
+}
 /*
  Manual test: stream >4 GiB into a ZIP without buffering output.
  Usage examples:
@@ -11,6 +21,20 @@ import fs from "node:fs";
 import { Readable } from "node:stream";
 import path from "node:path";
 import * as zip from "../../index.js";
+
+async function computeFirstLocalHeaderLengthFromEntry(entry) {
+    // Local file header base is 30 bytes
+    const base = 30;
+    const nameLen = entry.rawFilename ? entry.rawFilename.length : (entry.filename ? entry.filename.length : 0);
+    const rawExtraField = entry.rawExtraField || new Uint8Array();
+    const rawExtraFieldAES = entry.rawExtraFieldAES || new Uint8Array();
+    const rawExtraFieldExtendedTimestamp = entry.rawExtraFieldExtendedTimestamp || new Uint8Array();
+    const rawExtraFieldNTFS = entry.rawExtraFieldNTFS || new Uint8Array();
+    // Zip64 local extra may be partially present; use the exact local extra length recorded
+    const localZip64Len = entry.localExtraFieldZip64Length || 0;
+    const extraLen = localZip64Len + rawExtraField.length + rawExtraFieldAES.length + rawExtraFieldExtendedTimestamp.length + rawExtraFieldNTFS.length;
+    return base + nameLen + extraLen;
+}
 
 function parseArgs() {
     const argv = process.argv.slice(2);
@@ -89,8 +113,9 @@ export async function test() {
         const estimate = zipWriterStream.zipWriter.estimateStreamSize({ ...options, files: files.map(f => ({ name: f.name, uncompressedSize: f.size, level: 0 })) });
         if (!(typeof estimate === "number" && estimate > 0)) throw new Error("estimate must be a positive number");
 
-        // Start consuming the zip readable stream and count bytes
-        const reader = zipWriterStream.readable.getReader();
+        // Start consuming the zip readable stream and count bytes, and in parallel collect a blob
+        const [zipReadableForCount, zipReadableForBlob] = zipWriterStream.readable.tee();
+        const reader = zipReadableForCount.getReader();
         const countPromise = (async () => {
             let total = 0;
             for (; ;) {
@@ -100,6 +125,7 @@ export async function test() {
             }
             return total;
         })();
+        const zipBlobPromise = (async () => new Response(zipReadableForBlob).blob())();
 
         // Add entries sequentially (store, known size)
         const promises = [];
@@ -124,20 +150,32 @@ export async function test() {
             // console.log("entry", entry);
         }
 
+        let entries;
         await Promise.all(promises);
         if (Array.isArray(zipWriterStream.entriesPromise) && zipWriterStream.entriesPromise.length) {
-            await Promise.all(zipWriterStream.entriesPromise);
+            entries = await Promise.all(zipWriterStream.entriesPromise);
         }
 
 
         // Finalize stream and compare
-        await zipWriterStream.close();
+        const writableResult = await zipWriterStream.close();
         const totalBytes = await countPromise;
 
         if (totalBytes !== estimate) {
             throw new Error(`mismatch: estimate=${estimate} totalBytes=${totalBytes}`);
         }
         console.log("OK", { estimate, totalBytes, entries: files.length });
+
+        // Extra test: create a blob from the stream and slice out the first file's data directly
+        const archiveBlob = await zipBlobPromise;
+        const headerLen = await computeFirstLocalHeaderLengthFromEntry(entries && entries[0] ? entries[0] : {});
+        const headerLen2 = await readFirstLocalHeaderLength(archiveBlob);
+        console.log("headerLen", headerLen, headerLen2);
+        const fileBlob = archiveBlob.slice(headerLen, headerLen + files[0].size);
+        if (fileBlob.size !== files[0].size) {
+            throw new Error(`sliced blob size mismatch: got=${fileBlob.size} expected=${files[0].size}`);
+        }
+        console.log("slice extract OK", { name: files[0].name, size: fileBlob.size });
         return;
     }
 
