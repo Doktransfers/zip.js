@@ -4326,9 +4326,6 @@
 	 */
 
 
-	// Debug logging, enabled when running under Node with ZIP_SIZE_DEBUG=1
-	const ENABLE_SIZE_DEBUG = (typeof process !== "undefined" && process && process.env && process.env.ZIP_SIZE_DEBUG === "1");
-
 	const ERR_DUPLICATED_NAME = "File already exists";
 	const ERR_INVALID_COMMENT = "Zip file comment exceeds 64KB";
 	const ERR_INVALID_ENTRY_COMMENT = "File entry comment exceeds 64KB";
@@ -4636,7 +4633,7 @@
 						rawExtraField,
 						extendedTimestamp
 					});
-					if (ENABLE_SIZE_DEBUG || normalizedOptions.debug) {
+					if (normalizedOptions.debug) {
 						debugPerEntry.push({
 							name,
 							metadataSize,
@@ -4698,23 +4695,9 @@
 
 			let total = directoryOffset + directoryDataLength + endRecordsLength + archiveCommentLength;
 			// No empirical fudge: estimator now mirrors write-time metadata exactly (Zip64, local header, data descriptor)
-			const debugFudgeTotal = 0;
 			const scope = normalizedOptions.scope || "stream";
 			if (Array.isArray(providedFiles) && providedFiles.length && scope === "entry") {
 				return entriesCompressedSize;
-			}
-			if (ENABLE_SIZE_DEBUG || normalizedOptions.debug) {
-				try {
-					console.log("[zipjs][estimate] baseOffset=%d pendingEntriesTotal=%d directoryOffset=%d directoryData=%d endRecords=%d fudgeTotal=%d files=%d",
-						baseOffset, pendingEntriesTotalSize, directoryOffset, directoryDataLength, endRecordsLength, debugFudgeTotal, filesLength);
-					for (const e of debugPerEntry) {
-						console.log("[zipjs][estimate][entry] name=%s metadata=%d (localHeader=%d + dataDesc=%d) data=%d zip64=%s zip64Size=(u:%s c:%s) zip64Offset=%s",
-							e.name, e.metadataSize, e.localHeaderLen, e.dataDescLen, e.entryDataSize, String(!!e.zip64), String(!!e.zip64UncompressedSize), String(!!e.zip64CompressedSize), String(!!e.zip64Offset));
-					}
-					console.log("[zipjs][estimate] total=%d", total);
-				} catch (_) {
-					// ignore logging errors in non-Node environments
-				}
 			}
 			return total;
 		}
@@ -5035,17 +5018,6 @@
 				await writeData(fileWriter, localHeaderArray);
 			}
 			fileEntry = await createFileEntry(reader, fileWriter, fileEntry, entryInfo, zipWriter.config, options);
-			if (ENABLE_SIZE_DEBUG) {
-				try {
-					const { metadataSize } = entryInfo;
-					const { dataDescriptorArray } = entryInfo.dataDescriptorInfo || { dataDescriptorArray: new Uint8Array() };
-					const { localHeaderArray } = entryInfo.headerInfo || { localHeaderArray: new Uint8Array() };
-					console.log("[zipjs][write][entry] name=%s metadata=%d (localHeader=%d + dataDesc=%d) data=%d zip64=%s",
-						name, metadataSize, getLength(localHeaderArray), getLength(dataDescriptorArray), fileEntry.compressedSize, String(!!fileEntry.zip64));
-				} catch (_) {
-					// ignore
-				}
-			}
 			const { zip64 } = fileEntry;
 			writingEntryData = false;
 			files.set(name, fileEntry);
@@ -5649,7 +5621,6 @@
 		let directoryDataLength = 0;
 		let directoryOffset = zipWriter.offset - diskOffset;
 		let filesLength = files.size;
-		let debugEntriesTotalSize = 0;
 		for (const [, fileEntry] of files) {
 			const {
 				rawFilename,
@@ -5662,9 +5633,6 @@
 				extraFieldExtendedTimestampFlag,
 				lastModDate
 			} = fileEntry;
-			if (ENABLE_SIZE_DEBUG) {
-				debugEntriesTotalSize += fileEntry.size || 0;
-			}
 			let rawExtraFieldTimestamp;
 			if (extendedTimestamp) {
 				rawExtraFieldTimestamp = new Uint8Array(9);
@@ -5827,15 +5795,6 @@
 		await writeData(writer, endOfdirectoryArray);
 		if (commentLength) {
 			await writeData(writer, comment);
-		}
-		if (ENABLE_SIZE_DEBUG) {
-			try {
-				const addSplitSignatureLen = zipWriter.addSplitZipSignature ? 4 : 0;
-				console.log("[zipjs][write] entriesTotal=%d directoryData=%d endRecords=%d splitSig=%d finalWriterSize=%d",
-					debugEntriesTotalSize, directoryDataLength, getLength(endOfdirectoryArray) + commentLength, addSplitSignatureLen, writer.size);
-			} catch (_) {
-				// ignore
-			}
 		}
 	}
 
