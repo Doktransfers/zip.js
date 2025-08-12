@@ -1170,10 +1170,25 @@ export interface EntryMetaData {
    * Raw extra fields and local header details (advanced)
    */
   headerArray?: Uint8Array;
+  /**
+   * Raw extra fields and local header details (advanced)
+   */
   rawExtraFieldZip64?: Uint8Array;
+  /**
+   * Length of the raw extra field for Zip64
+   */
   localExtraFieldZip64Length?: number;
+  /**
+   * Raw extra field for AES
+   */
   rawExtraFieldAES?: Uint8Array;
+  /**
+   * Raw extra field for NTFS
+   */
   rawExtraFieldNTFS?: Uint8Array;
+  /**
+   * Raw extra field for extended timestamp
+   */
   rawExtraFieldExtendedTimestamp?: Uint8Array;
 }
 
