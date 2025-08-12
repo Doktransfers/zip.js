@@ -1281,7 +1281,7 @@ export interface EntryGetDataCheckPasswordOptions extends EntryGetDataOptions {}
  * zipper.close()
  * ```
  */
-export class ZipWriterStream {
+export class ZipWriterStream<T> {
   /**
    * Creates the stream.
    *
@@ -1290,14 +1290,19 @@ export class ZipWriterStream {
   constructor(options?: ZipWriterConstructorOptions);
 
   /**
+   * The promises for the entries.
+   */
+  entriesPromise: Promise<EntryMetaData>[];
+  
+  /**
    * The readable stream.
    */
-  readable: ReadableStream<Uint8Array>;
+  readable: ReadableStream<T>;
 
   /**
    * The ZipWriter property.
    */
-  zipWriter: ZipWriter<unknown>;
+  zipWriter: ZipWriter<T>;
 
   /**
    * Returns an object containing a readable and writable property for the .pipeThrough method
