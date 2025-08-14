@@ -13,8 +13,9 @@ async function readFirstLocalHeaderLength(blob) {
  Usage examples:
    node tests/manual/test-estimate-size-giant-node.js --bytes 4295032832   # 4 GiB + 64 KiB
    node tests/manual/test-estimate-size-giant-node.js --file /path/to/huge.file
-    node tests/manual/test-estimate-size-giant-node.js --dir /path/to/folder
-    node tests/manual/test-estimate-size-giant-node.js --folder /path/to/folder
+   node tests/manual/test-estimate-size-giant-node.js --dir /path/to/folder
+   node tests/manual/test-estimate-size-giant-node.js --folder /path/to/folder
+   node tests/manual/test-estimate-size-giant-node.js --test-abort         # Test abort and restart functionality
 */
 
 import fs from "node:fs";
@@ -45,6 +46,7 @@ function parseArgs() {
         if (k === "--file") { opts.file = argv[++i]; continue; }
         if (k === "--name") { opts.name = argv[++i]; continue; }
         if (k === "--dir" || k === "--folder") { opts.dir = argv[++i]; continue; }
+        if (k === "--test-abort") { opts.testAbort = true; continue; }
     }
     return opts;
 }
@@ -88,16 +90,200 @@ function collectFilesRecursively(rootDir) {
     return results;
 }
 
+async function testAbortAndRestart() {
+    zip.configure({ useWebWorkers: true, maxWorkers: 1, chunkSize: 1024 * 1024 });
+    
+    const testBytes = 1 * 1024 * 1024 * 1024; // 1 GiB
+    const entryName = "abort-test.bin";
+    
+    console.log("Testing abort and restart functionality...");
+    
+    // First attempt: create archive, start reading, then abort using AbortController
+    console.log("Creating first archive...");
+    const abortController = new AbortController();
+    const zipWriterStream1 = new zip.ZipWriterStream({ 
+        keepOrder: true, 
+        level: 0,
+        signal: abortController.signal 
+    });
+    
+    const readable1 = makeGeneratedReadable(testBytes);
+    
+    // Start reading the zip stream immediately
+    const reader1 = zipWriterStream1.readable.getReader();
+    
+    const readPromise1 = (async () => {
+        let totalRead = 0;
+        let chunkCount = 0;
+        try {
+            while (!abortController.signal.aborted) {
+                const { done, value } = await reader1.read();
+                if (done) break;
+                totalRead += value.length;
+                chunkCount++;
+                
+                // Abort after reading a few chunks
+                if (chunkCount >= 15) {
+                    console.log(`Aborting after reading ${totalRead} bytes in ${chunkCount} chunks`);
+                    // Trigger abort in next tick to allow current read to complete
+                    setTimeout(() => {
+                        abortController.abort("Test abort requested");  
+                    }, 100);
+                    break;
+                }
+            }
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                console.log("Read aborted as expected:", error.message);
+            } else {
+                console.log("Read error during abort:", error.message);
+            }
+        } finally {
+            try {
+                reader1.releaseLock();
+            } catch (e) {
+                // Expected if stream was already closed
+            }
+        }
+        return totalRead;
+    })();
+    
+    // Start the archive creation concurrently
+    const addPromise1 = (async () => {
+        try {
+            return await zipWriterStream1.zipWriter.add(entryName, readable1, { 
+                level: 0, 
+                passThrough: true, 
+                uncompressedSize: testBytes,
+                signal: abortController.signal
+            });
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                console.log("Add operation aborted as expected:", error.message);
+            } else {
+                console.log("Add error during abort:", error?.message || error);
+            }
+            return null;
+        }
+    })();
+    
+    // Wait for the read to abort
+    const totalRead = await readPromise1;
+    console.log(`Read ${totalRead} bytes before abort`);
+    
+    // Try to clean up with timeout
+    try {
+        const cleanupPromise = Promise.all([addPromise1, zipWriterStream1.close(), zip.terminateWorkers()]);
+        await Promise.race([
+            cleanupPromise,
+            new Promise((_, reject) => 
+                setTimeout(() => {
+                    reject(new Error("Cleanup timeout"));   
+                }, 5000)
+            )
+        ]);
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            console.log("Cleanup aborted as expected:", error.message);
+        } else if (error.message === "Cleanup timeout") {
+            console.log("Cleanup timed out as expected - forcing abort");
+        } else {
+            console.log("First attempt cleanup error (expected):", error?.message || error);
+        }
+    }
+    
+    console.log("First attempt aborted successfully");
+    
+    // Wait a bit before starting second attempt
+    await new Promise(resolve => {
+        setTimeout(resolve, 100);
+    });
+    
+    // Second attempt: create a new archive and read it completely
+    console.log("Creating second archive...");
+    const zipWriterStream2 = new zip.ZipWriterStream({ keepOrder: true, level: 0 });
+    const readable2 = makeGeneratedReadable(testBytes);
+    
+    // Pre-estimate for validation
+    const estimate = zipWriterStream2.zipWriter.estimateStreamSize({
+        files: [{ name: entryName, uncompressedSize: testBytes, level: 0 }]
+    });
+    
+    // Start consuming the zip readable stream and count bytes
+    const reader2 = zipWriterStream2.readable.getReader();
+    const countPromise = (async () => {
+        let total = 0;
+        let chunkCount = 0;
+        try {
+            for (;;) {
+                const { done, value } = await reader2.read();
+                if (done) break;
+                total += value.length;
+                chunkCount++;
+                
+                if (chunkCount % 5 === 0) {
+                    console.log(`Read ${total} bytes in ${chunkCount} chunks`);
+                }
+            }
+        } catch (error) {
+            console.error("Unexpected error reading second archive:", error);
+            throw error;
+        } finally {
+            reader2.releaseLock();
+           
+        }
+        return total;
+    })();
+    
+    // Add the entry
+    console.log("Adding entry to second archive...");
+    const entry2 = await zipWriterStream2.zipWriter.add(entryName, readable2, { 
+        level: 0, 
+        passThrough: true, 
+        uncompressedSize: testBytes, 
+        signal: abortController.signal
+    });
+    
+    // Finalize and validate
+    console.log("Finalizing second archive...");
+    await zipWriterStream2.close();
+    await zip.terminateWorkers();
+    const totalBytes = await countPromise;
+    
+    // Allow small differences in estimation vs actual size (up to 0.1%)
+    const sizeDiff = Math.abs(totalBytes - estimate);
+    const sizeDiffPercent = (sizeDiff / estimate) * 100;
+    if (sizeDiffPercent > 0.1) {
+        throw new Error(`Second attempt mismatch: estimate=${estimate} totalBytes=${totalBytes} diff=${sizeDiff} (${sizeDiffPercent.toFixed(3)}%)`);
+    }
+    
+    console.log("Second attempt completed successfully", { 
+        estimate, 
+        totalBytes, 
+        entrySize: entry2.uncompressedSize 
+    });
+    
+    console.log("Abort and restart test completed successfully!");
+}
+
 export async function test() {
     zip.configure({ useWebWorkers: true, maxWorkers: 1 });
 
-    const { file, bytes, name, dir } = parseArgs();
+    const { file, bytes, name, dir, testAbort } = parseArgs();
+    
+    // Run abort test if requested
+    if (testAbort) {
+        await testAbortAndRestart();
+        return;
+    }
+    
     let entryName;
     let readable;
     let uncompressedSize;
 
     // Directory mode: zip all files inside the folder recursively (store, known sizes)
     if (dir) {
+        const abortController = new AbortController();
         const stat = fs.statSync(dir);
         if (!stat.isDirectory()) throw new Error("--dir must point to a directory");
 
@@ -105,7 +291,7 @@ export async function test() {
         if (collected.length === 0) throw new Error("Directory contains no files");
 
         const files = collected.map(f => ({ name: f.name, size: f.size, abs: f.abs }));
-        const options = { keepOrder: true, level: 0 };
+        const options = { keepOrder: true, level: 0, signal: abortController.signal };
         // Create writer stream
         const zipWriterStream = new zip.ZipWriterStream(options);
 
